@@ -12,7 +12,7 @@ class DecoderGPTBlock(nn.Module):
 
         super().__init__()
 
-        self.self_attention = attention.MultiHeadAttention(
+        self.self_attention = attention.CausalSelfAttention(
                         C, n_heads,  
                         max_block_size, dropout_freq=dropout_freq)
 

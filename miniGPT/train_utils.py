@@ -96,7 +96,8 @@ class DecoderGPTtrainer():
             self.losses_std.append(np.std(epoch_train_losses))
 
             # Valid
-            epoch_val_losses = self.evaluate_dataset(val_loader, train=False,
+            with torch.no_grad():
+                epoch_val_losses = self.evaluate_dataset(val_loader, train=False,
                                     desc=f'{i_epoch:} : Val   ',length=val_length)
             mean_val_loss = np.mean(epoch_val_losses)
             self.val_losses.append(mean_val_loss)
