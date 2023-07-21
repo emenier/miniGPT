@@ -1,6 +1,6 @@
 from tqdm import tqdm
 import torch
-import torch.nn
+import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
@@ -32,7 +32,7 @@ class MyLoader():
         self.dataset = dataset
         self.batch_size = batch_size
         self.length = length
-        self.counter = 0
+        self.counter = 1
 
     def __iter__(self):
         return self
@@ -42,7 +42,7 @@ class MyLoader():
 
     def __next__(self):
         if self.counter > len(self):
-            self.counter=0
+            self.counter=1
             raise StopIteration
         else:
             self.counter+=1
@@ -62,10 +62,20 @@ def get_loaders(train, val, batch_size,epoch_length,val_length):
             MyLoader(val,batch_size,val_length)
 
 
+def monitor_memory():
+
+    if torch.cuda.is_available():
+        for i in range(torch.cuda.device_count()):
+            print('GPU : {:}, A : {:.3f}GB, R : {:.3f}GB, M : {:.3f}'.format(
+                i,torch.cuda.memory_allocated(i)/1024**3,torch.cuda.memory_reserved(i)/1024**3,
+                torch.cuda.max_memory_reserved(i)/1024**3
+            ))
+
+
 
 class DecoderGPTtrainer():
 
-    def __init__(self,gpt_model,lr,checkpoint_path='',wd=0.):
+    def __init__(self,gpt_model,lr,checkpoint_path='',wd=0.,parallel=False):
 
         self.gpt_model = gpt_model
         self.opt = torch.optim.Adam(gpt_model.parameters(),lr=lr,weight_decay=wd)
@@ -73,6 +83,9 @@ class DecoderGPTtrainer():
 
         self.losses, self.losses_std = [], []
         self.val_losses, self.val_losses_std = [], []
+        self.parallel = parallel
+        if parallel:
+            self.gpt_model = nn.DataParallel(self.gpt_model)
 
     def train(self,train_dataset,val_dataset,batch_size=256,
                 epoch_length=None,val_length=None,
@@ -85,7 +98,6 @@ class DecoderGPTtrainer():
         best_val_step = val_step
         best_val_loss = float(np.inf)
         i_epoch = len(self.losses)
-
         while (i_epoch-best_val_step) < patience:
             
             i_epoch+=1
@@ -136,14 +148,14 @@ class DecoderGPTtrainer():
 
             pbar.set_description(desc+' Loss {:.3e}'.format(
                                     np.array(epoch_losses).mean()))
-
+        monitor_memory()
         if was_training: self.gpt_model.train()
         else: self.gpt_model.eval()
         return epoch_losses
 
     def get_state_dict(self):
         dic = {
-            'state':self.gpt_model.state_dict(),
+            'state':self.gpt_model.module.state_dict() if self.parallel else self.gpt_model.state_dict(),
             'opt':self.opt.state_dict(),
             'losses':self.losses,'losses_std':self.losses_std,
             'val_losses':self.val_losses,'val_losses_std':self.val_losses_std
@@ -159,11 +171,14 @@ class DecoderGPTtrainer():
     def load(self,name):
 
         if torch.cuda.is_available():
-            dic = torch.load(self.checkpoint_path+name)
+            dic = torch.load(self.checkpoint_path+name,map_location=torch.device('cuda'))
         else:
             dic = torch.load(self.checkpoint_path+name,map_location=torch.device('cpu'))
 
-        self.gpt_model.load_state_dict(dic['state'])
+        if self.parallel:
+            self.gpt_model.module.load_state_dict(dic['state'])
+        else: self.gpt_model.load_state_dict(dic['state'])
+
         self.opt.load_state_dict(dic['opt'])
         self.losses, self.losses_std = dic['losses'], dic['losses_std']
         self.val_losses, self.val_losses_std = dic['val_losses'], dic['val_losses_std']

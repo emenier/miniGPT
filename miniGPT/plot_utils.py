@@ -24,3 +24,23 @@ def plot_losses(checkpoint):
     ax.set_ylim(0.9*min(min(val_losses),min(losses)),None)
     plt.legend(fontsize=fs)
     
+def model_numbers(gpt_model,max_block_size,n_layers,C, n_heads):
+
+    to_test = {1e9:'B',1e6:'M',1e3:'K',1:''}
+
+    n_params = sum([p.numel() for p in gpt_model.parameters() if p.requires_grad])
+
+    for k,v in to_test.items():
+        if n_params > k:
+            rounded = int(n_params/k)
+            n_params_str = f'{rounded:} '+v
+            break
+
+
+    print('Model Numbers : ')
+    print(f'   Context   : {max_block_size:4d} tokens')
+    print(f'   Embedding : {C:4d} tokens')
+    print(f'   Layers    : {n_layers:4d}')
+    print(f'   Heads     : {n_heads:4d}')
+    print(f'   Params    : '+n_params_str)
+    
